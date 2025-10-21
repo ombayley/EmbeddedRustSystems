@@ -50,13 +50,20 @@ This project develops a stepper motor controller on the Raspberry Pi Pico 2, imp
 
 ### 🖥️ Setup
 
+Install [Rust](https://rustup.rs/)
+
+```bash
+cargo install cargo-generate
+```
+
+
 ```bash
 # Clone the repository
 git clone https://github.com/<yourusername>/<project-name>.git
 cd <project-name>
 
-# Install dependencies (example)
-npm install        # or pip install -r requirements.txt, or cargo build, etc.
+# Install dependencies
+cargo build
 ```
 
 ### ▶️ Run
@@ -94,12 +101,13 @@ npm run dev        # or python main.py / go run main.go / cargo run
 
 ## 🧑‍💻 Author
 
-**Your Name**  
-GitHub: [@yourusername](https://github.com/yourusername)  
-Email: your.email@example.com  
+**Olly Bayley**  
+GitHub: [@ombayley](https://github.com/ombayley)  
 
 ---
 
 ## 🪪 License
 
-This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
+This project is licensed under the **GNU General Public License (GPL)** — See the [LICENSE](LICENSE) file for details.
+The GPL License is a copyleft license, that requires any derivative work to also be released under the GPL License.
+This means any derivative software that uses this code remains open-source and freely available to the public.
