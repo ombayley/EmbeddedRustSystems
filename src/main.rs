@@ -1,77 +1,103 @@
-//! Blinks the LED on a Pico board
+//! This example tests the RP Pico 2 W onboard LED.
 //!
-//! This will blink an LED attached to GP25, which is the pin the Pico uses for the on-board LED.
+//! It does not work with the RP Pico 2 board. See `blinky.rs`.
+
 #![no_std]
 #![no_main]
 
-use bsp::entry;
+use cyw43_pio::{PioSpi, RM2_CLOCK_DIVIDER};
 use defmt::*;
-use defmt_rtt as _;
-use embedded_hal::digital::OutputPin;
-use panic_probe as _;
+use embassy_executor::Spawner;
+use embassy_rp::bind_interrupts;
+use embassy_rp::gpio::{Level, Output};
+use embassy_rp::peripherals::{DMA_CH0, PIO0};
+use embassy_rp::pio::{InterruptHandler, Pio};
+use embassy_time::{Duration, Timer};
+use static_cell::StaticCell;
+use {defmt_rtt as _, panic_probe as _};
 
-// Provide an alias for our BSP so we can switch targets quickly.
-// Uncomment the BSP you included in Cargo.toml, the rest of the code does not need to change.
-use rp_pico as bsp;
-// use sparkfun_pro_micro_rp2040 as bsp;
+// Program metadata for `picotool info`.
+// This isn't needed, but it's recommended to have these minimal entries.
+#[unsafe(link_section = ".bi_entries")]
+#[used]
+pub static PICOTOOL_ENTRIES: [embassy_rp::binary_info::EntryAddr; 4] = [
+    embassy_rp::binary_info::rp_program_name!(c"Blinky Example"),
+    embassy_rp::binary_info::rp_program_description!(
+        c"This example tests the RP Pico 2 W's onboard LED, connected to GPIO 0 of the cyw43 \
+        (WiFi chip) via PIO 0 over the SPI bus."
+    ),
+    embassy_rp::binary_info::rp_cargo_version!(),
+    embassy_rp::binary_info::rp_program_build_attribute!(),
+];
 
-use bsp::hal::{
-    clocks::{Clock, init_clocks_and_plls},
-    pac,
-    sio::Sio,
-    watchdog::Watchdog,
-};
+bind_interrupts!(struct Irqs {
+    PIO0_IRQ_0 => InterruptHandler<PIO0>;
+});
 
-#[entry]
-fn main() -> ! {
-    info!("Program start");
-    let mut pac = pac::Peripherals::take().unwrap();
-    let core = pac::CorePeripherals::take().unwrap();
-    let mut watchdog = Watchdog::new(pac.WATCHDOG);
-    let sio = Sio::new(pac.SIO);
-
-    // External high-speed crystal on the pico board is 12Mhz
-    let external_xtal_freq_hz = 12_000_000u32;
-    let clocks = init_clocks_and_plls(
-        external_xtal_freq_hz,
-        pac.XOSC,
-        pac.CLOCKS,
-        pac.PLL_SYS,
-        pac.PLL_USB,
-        &mut pac.RESETS,
-        &mut watchdog,
-    )
-    .ok()
-    .unwrap();
-
-    let mut delay = cortex_m::delay::Delay::new(core.SYST, clocks.system_clock.freq().to_Hz());
-
-    let pins = bsp::Pins::new(
-        pac.IO_BANK0,
-        pac.PADS_BANK0,
-        sio.gpio_bank0,
-        &mut pac.RESETS,
-    );
-
-    // This is the correct pin on the Raspberry Pico board. On other boards, even if they have an
-    // on-board LED, it might need to be changed.
-    //
-    // Notably, on the Pico W, the LED is not connected to any of the RP2040 GPIOs but to the cyw43 module instead.
-    // One way to do that is by using [embassy](https://github.com/embassy-rs/embassy/blob/main/examples/rp/src/bin/wifi_blinky.rs)
-    //
-    // If you have a Pico W and want to toggle a LED with a simple GPIO output pin, you can connect an external
-    // LED to one of the GPIO pins, and reference that pin here. Don't forget adding an appropriate resistor
-    // in series with the LED.
-    let mut led_pin = pins.led.into_push_pull_output();
-
-    loop {
-        info!("on!");
-        led_pin.set_high().unwrap();
-        delay.delay_ms(500);
-        info!("off!");
-        led_pin.set_low().unwrap();
-        delay.delay_ms(500);
-    }
+#[embassy_executor::task]
+async fn cyw43_task(
+    runner: cyw43::Runner<'static, Output<'static>, PioSpi<'static, PIO0, 0, DMA_CH0>>,
+) -> ! {
+    runner.run().await
 }
 
-// End of file
+#[embassy_executor::main]
+async fn main(spawner: Spawner) {
+    let p = embassy_rp::init(Default::default());
+    let mut led = Output::new(p.PIN_2, Level::Low);
+
+    let delay = Duration::from_millis(250);
+    loop {
+        led.set_high();
+        Timer::after(delay).await;
+        led.set_low();
+        Timer::after(delay).await;
+    }
+    // let p = embassy_rp::init(Default::default());
+    // let fw: &[u8] = cyw43_firmware::CYW43_43439 A0;
+    // let clm: &[u8] = cyw43_firmware::CYW43_43439A0_CLM;
+
+    // // To make flashing faster for development, you may want to flash the firmwares independently
+    // // at hardcoded addresses, instead of baking them into the program with `include_bytes!`:
+    // //     probe-rs download ../../cyw43-firmware/43439A0.bin --binary-format bin --chip RP235x --base-address 0x10100000
+    // //     probe-rs download ../../cyw43-firmware/43439A0_clm.bin --binary-format bin --chip RP235x --base-address 0x10140000
+    // //let fw = unsafe { core::slice::from_raw_parts(0x10100000 as *const u8, 230321) };
+    // //let clm = unsafe { core::slice::from_raw_parts(0x10140000 as *const u8, 4752) };
+
+    // let pwr = Output::new(p.PIN_23, Level::Low);
+    // let cs = Output::new(p.PIN_25, Level::High);
+    // let mut pio = Pio::new(p.PIO0, Irqs);
+    // let spi = PioSpi::new(
+    //     &mut pio.common,
+    //     pio.sm0,
+    //     // SPI communication won't work if the speed is too high, so we use a divider larger than `DEFAULT_CLOCK_DIVIDER`.
+    //     // See: https://github.com/embassy-rs/embassy/issues/3960.
+    //     RM2_CLOCK_DIVIDER,
+    //     pio.irq0,
+    //     cs,
+    //     p.PIN_24,
+    //     p.PIN_29,
+    //     p.DMA_CH0,
+    // );
+
+    // static STATE: StaticCell<cyw43::State> = StaticCell::new();
+    // let state = STATE.init(cyw43::State::new());
+    // let (_net_device, mut control, runner) = cyw43::new(state, pwr, spi, fw).await;
+    // unwrap!(spawner.spawn(cyw43_task(runner)));
+
+    // control.init(clm).await;
+    // control
+    //     .set_power_management(cyw43::PowerManagementMode::PowerSave)
+    //     .await;
+
+    // let delay = Duration::from_millis(250);
+    // loop {
+    //     info!("led on!");
+    //     control.gpio_set(0, true).await;
+    //     Timer::after(delay).await;
+
+    //     info!("led off!");
+    //     control.gpio_set(0, false).await;
+    //     Timer::after(delay).await;
+    // }
+}
