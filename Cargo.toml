@@ -32,7 +32,6 @@ static_cell = "2"
 # pull in the firmware blobs as constants
 cyw43-firmware = { version = "0.1", default-features = false, features = ["wifi"] }
 
-
 # cargo build/run
 [profile.dev]
 debug = 2

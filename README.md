@@ -50,7 +50,11 @@ This project develops a stepper motor controller on the Raspberry Pi Pico 2, imp
 
 ### 🖥️ Setup
 
-Install [Rust](https://rustup.rs/)
+This is a rust project so installing [Rust](https://rustup.rs/) is essential. This can be found at [https://www.rust-lang.org/tools/install](https://www.rust-lang.org/tools/install)
+
+The project is run on a pi pico 2W which means the more developed/stable rp-2040 crate is not applicable and will cause errors. The pi pico 2 has an update processor, the RP2350 which requires the rp235x crate.
+Secondly, the wifi chips require the cyw43 crate to use the on-board systems (Bluetooth, Wireless **AND the on-board LED**). The cyw43 driver is async-only, so you need the embassy async executor. The embassy allows for async/await programming in rust.
+
 
 ```bash
 cargo install cargo-generate
@@ -93,9 +97,15 @@ npm run dev        # or python main.py / go run main.go / cargo run
 
 ## 📚 References / Resources
 
-- [Library or Framework Docs](https://example.com)
-- [Tutorial or Blog Post](https://example.com)
-- [Dataset / Hardware Info](https://example.com)
+- [The Rust Book](https://doc.rust-lang.org/book/print.html)
+- [The Embedded Rust Book](https://docs.rust-embedded.org/book/print.html)
+
+- [Embassy example for rp235x](https://github.com/embassy-rs/embassy/tree/main/examples/rp235x)
+- [Template for rp235x](https://github.com/rp-rs/rp235x-project-template/tree/main)
+
+- [Raspberry Pi Pico SDK](https://github.com/raspberrypi/pico-sdk-tools/releases)
+
+- [Pi Pico 2W Datasheet](https://datasheets.raspberrypi.com/picow/pico-2-w-datasheet.pdf)
 
 ---
 

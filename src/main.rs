@@ -1,39 +1,27 @@
-//! This example tests the RP Pico 2 W onboard LED.
-//!
-//! It does not work with the RP Pico 2 board. See `blinky.rs`.
-
 #![no_std]
 #![no_main]
 
-use cyw43_pio::{PioSpi, RM2_CLOCK_DIVIDER};
+// --- Required runtime stuff for embedded, logging, and panics ---
 use defmt::*;
 use embassy_executor::Spawner;
+use embassy_time::{Duration, Timer};
+use {defmt_rtt as _, panic_probe as _};
+
+// --- RP235x (Pico 2) HAL + PIO-SPI driver to talk to the CYW43 chip ---
+use cyw43_pio::{PioSpi, RM2_CLOCK_DIVIDER};
 use embassy_rp::bind_interrupts;
 use embassy_rp::gpio::{Level, Output};
 use embassy_rp::peripherals::{DMA_CH0, PIO0};
 use embassy_rp::pio::{InterruptHandler, Pio};
-use embassy_time::{Duration, Timer};
-use static_cell::StaticCell;
-use {defmt_rtt as _, panic_probe as _};
 
-// Program metadata for `picotool info`.
-// This isn't needed, but it's recommended to have these minimal entries.
-#[unsafe(link_section = ".bi_entries")]
-#[used]
-pub static PICOTOOL_ENTRIES: [embassy_rp::binary_info::EntryAddr; 4] = [
-    embassy_rp::binary_info::rp_program_name!(c"Blinky Example"),
-    embassy_rp::binary_info::rp_program_description!(
-        c"This example tests the RP Pico 2 W's onboard LED, connected to GPIO 0 of the cyw43 \
-        (WiFi chip) via PIO 0 over the SPI bus."
-    ),
-    embassy_rp::binary_info::rp_cargo_version!(),
-    embassy_rp::binary_info::rp_program_build_attribute!(),
-];
+// --- WiFi/LED driver state + firmware blobs ---
+use static_cell::StaticCell;
 
 bind_interrupts!(struct Irqs {
     PIO0_IRQ_0 => InterruptHandler<PIO0>;
 });
 
+// This async task is required by the cyw43 driver (it handles the chip in the background)
 #[embassy_executor::task]
 async fn cyw43_task(
     runner: cyw43::Runner<'static, Output<'static>, PioSpi<'static, PIO0, 0, DMA_CH0>>,
@@ -43,61 +31,53 @@ async fn cyw43_task(
 
 #[embassy_executor::main]
 async fn main(spawner: Spawner) {
+    // 1) Set up the chip/board peripherals.
     let p = embassy_rp::init(Default::default());
-    let mut led = Output::new(p.PIN_2, Level::Low);
 
+    // 2) Get firmware bytes (provided by the `cyw43_firmware` crate).
+    let fw: &[u8] = cyw43_firmware::CYW43_43439A0;
+    let clm: &[u8] = cyw43_firmware::CYW43_43439A0_CLM;
+
+    // 3) Set up the pins the CYW43 chip needs:
+    //    - pwr: power control pin to the WiFi module
+    //    - cs:  chip select for SPI
+    let pwr = Output::new(p.PIN_23, Level::Low);
+    let cs = Output::new(p.PIN_25, Level::High);
+
+    // 4) Create a PIO instance and then a SPI interface on top of it for the CYW43.
+    let mut pio = Pio::new(p.PIO0, Irqs);
+    let spi = PioSpi::new(
+        &mut pio.common,
+        pio.sm0,
+        RM2_CLOCK_DIVIDER, // safe clock speed for this board/chip
+        pio.irq0,
+        cs,
+        p.PIN_24, // MOSI
+        p.PIN_29, // SCK
+        p.DMA_CH0,
+    );
+
+    // 5) Make a global driver state, create the CYW43 driver, and spawn its background task.
+    static STATE: StaticCell<cyw43::State> = StaticCell::new();
+    let state = STATE.init(cyw43::State::new());
+    let (_net_device, mut control, runner) = cyw43::new(state, pwr, spi, fw).await;
+    unwrap!(spawner.spawn(cyw43_task(runner)));
+
+    // 6) Send the regulatory database to the chip (CLM), and choose a power mode.
+    control.init(clm).await;
+    control
+        .set_power_management(cyw43::PowerManagementMode::PowerSave)
+        .await;
+
+    // 7) Blink the LED that lives **inside** the CYW43 chip (GPIO 0).
     let delay = Duration::from_millis(250);
     loop {
-        led.set_high();
+        info!("led on");
+        control.gpio_set(0, true).await; // turn on LED
         Timer::after(delay).await;
-        led.set_low();
+
+        info!("led off");
+        control.gpio_set(0, false).await; // turn off LED
         Timer::after(delay).await;
     }
-    // let p = embassy_rp::init(Default::default());
-    // let fw: &[u8] = cyw43_firmware::CYW43_43439 A0;
-    // let clm: &[u8] = cyw43_firmware::CYW43_43439A0_CLM;
-
-    // // To make flashing faster for development, you may want to flash the firmwares independently
-    // // at hardcoded addresses, instead of baking them into the program with `include_bytes!`:
-    // //     probe-rs download ../../cyw43-firmware/43439A0.bin --binary-format bin --chip RP235x --base-address 0x10100000
-    // //     probe-rs download ../../cyw43-firmware/43439A0_clm.bin --binary-format bin --chip RP235x --base-address 0x10140000
-    // //let fw = unsafe { core::slice::from_raw_parts(0x10100000 as *const u8, 230321) };
-    // //let clm = unsafe { core::slice::from_raw_parts(0x10140000 as *const u8, 4752) };
-
-    // let pwr = Output::new(p.PIN_23, Level::Low);
-    // let cs = Output::new(p.PIN_25, Level::High);
-    // let mut pio = Pio::new(p.PIO0, Irqs);
-    // let spi = PioSpi::new(
-    //     &mut pio.common,
-    //     pio.sm0,
-    //     // SPI communication won't work if the speed is too high, so we use a divider larger than `DEFAULT_CLOCK_DIVIDER`.
-    //     // See: https://github.com/embassy-rs/embassy/issues/3960.
-    //     RM2_CLOCK_DIVIDER,
-    //     pio.irq0,
-    //     cs,
-    //     p.PIN_24,
-    //     p.PIN_29,
-    //     p.DMA_CH0,
-    // );
-
-    // static STATE: StaticCell<cyw43::State> = StaticCell::new();
-    // let state = STATE.init(cyw43::State::new());
-    // let (_net_device, mut control, runner) = cyw43::new(state, pwr, spi, fw).await;
-    // unwrap!(spawner.spawn(cyw43_task(runner)));
-
-    // control.init(clm).await;
-    // control
-    //     .set_power_management(cyw43::PowerManagementMode::PowerSave)
-    //     .await;
-
-    // let delay = Duration::from_millis(250);
-    // loop {
-    //     info!("led on!");
-    //     control.gpio_set(0, true).await;
-    //     Timer::after(delay).await;
-
-    //     info!("led off!");
-    //     control.gpio_set(0, false).await;
-    //     Timer::after(delay).await;
-    // }
 }
