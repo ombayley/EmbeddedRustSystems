@@ -17,13 +17,13 @@ async fn main(spawner: Spawner) {
     // Prepare system
     sys::init();
 
-    // Embassy/RP init
+    // Get peripherals
     let peripherals: embassy_rp::Peripherals = hal::init(Default::default());
 
     // Start USB communication
     let port: serial_usb::UsbSerialPort = serial_usb::init(&spawner, peripherals.USB);
 
-    // Creater parser to read data
+    // Create parser to read comands
     let mut parser = protocol::Parser::new();
 
     // Prepare chase pins
@@ -51,9 +51,9 @@ async fn main(spawner: Spawner) {
                     }
                     0x02 => {
                         // CHASE (setter)
-                        chase.run().await;
                         let resp = protocol::build_ack::<64>(frame.addr, frame.cmd).unwrap();
                         port.write(&resp).await;
+                        chase.run().await;
                     }
                     0x20 => {
                         // GET_DEVICE_ID (getter)
