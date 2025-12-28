@@ -1,6 +1,7 @@
 //! Transport Layer via USB Serial
 //!
 use embassy_executor::Spawner;
+use embassy_futures::select::{Either, select};
 use embassy_rp::Peri;
 use embassy_rp::bind_interrupts;
 use embassy_rp::peripherals::USB;
@@ -9,6 +10,7 @@ use embassy_sync::blocking_mutex::raw::CriticalSectionRawMutex;
 use embassy_sync::channel::Channel;
 use embassy_usb::UsbDevice;
 use embassy_usb::class::cdc_acm::{CdcAcmClass, State};
+use heapless::Vec;
 use static_cell::StaticCell;
 
 // Interrupt handler
@@ -21,20 +23,24 @@ type MyUsbDriver = Driver<'static, USB>;
 type MyUsbDevice = UsbDevice<'static, MyUsbDriver>;
 
 // Channels
-static TX_TO_USB: Channel<CriticalSectionRawMutex, heapless::Vec<u8, 64>, 8> = Channel::new();
-static RX_FROM_USB: Channel<CriticalSectionRawMutex, heapless::Vec<u8, 64>, 8> = Channel::new();
+static TX_TO_USB: Channel<CriticalSectionRawMutex, Vec<u8, 64>, 8> = Channel::new();
+static RX_FROM_USB: Channel<CriticalSectionRawMutex, Vec<u8, 64>, 8> = Channel::new();
 
 // API Struct
 pub struct UsbSerialPort;
+
 impl UsbSerialPort {
+    /// Queue bytes to send to the host. Data is chunked into max 64-byte packets.
     pub async fn write(&self, data: &[u8]) {
         for chunk in data.chunks(64) {
-            let mut v = heapless::Vec::<u8, 64>::new();
-            v.extend_from_slice(chunk).ok();
+            let mut v = Vec::<u8, 64>::new();
+            let _ = v.extend_from_slice(chunk);
             TX_TO_USB.send(v).await;
         }
     }
-    pub async fn read(&self) -> heapless::Vec<u8, 64> {
+
+    /// Receive next packet of bytes from the host (up to 64 bytes).
+    pub async fn read(&self) -> Vec<u8, 64> {
         RX_FROM_USB.receive().await
     }
 }
@@ -99,22 +105,24 @@ async fn cdc_task(mut class: CdcAcmClass<'static, MyUsbDriver>) -> ! {
         // Wait until host opens the port
         class.wait_connection().await;
 
+        // While connected, service both RX and TX without blocking one on the other.
         loop {
-            // 1) Read from USB, forward to RX channel
-            match class.read_packet(&mut buf).await {
-                Ok(n) => {
-                    let mut v = heapless::Vec::<u8, 64>::new();
-                    v.extend_from_slice(&buf[..n]).ok();
-                    RX_FROM_USB.send(v).await;
+            match select(class.read_packet(&mut buf), TX_TO_USB.receive()).await {
+                Either::First(read_res) => match read_res {
+                    Ok(n) => {
+                        let mut v = Vec::<u8, 64>::new();
+                        let _ = v.extend_from_slice(&buf[..n]);
+                        RX_FROM_USB.send(v).await;
+                    }
+                    Err(_) => break, // disconnected
+                },
+                Either::Second(out) => {
+                    // Best-effort send; if disconnected write_packet will error and we break.
+                    if class.write_packet(&out).await.is_err() {
+                        break;
+                    }
                 }
-                Err(_) => break, // disconnected
             }
-
-            // 2) If app has data to send, write it to USB
-            // (This blocks until something is available. If you want non-blocking,
-            // use a select! between read_packet and TX receive.)
-            let out = TX_TO_USB.receive().await;
-            let _ = class.write_packet(&out).await;
         }
     }
 }
