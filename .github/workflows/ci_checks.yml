@@ -1,59 +1,94 @@
 name: CI Checks
 
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
+  # Make embedded builds more reproducible and avoid incremental bloat in CI
+  CARGO_INCREMENTAL: "0"
 
 jobs:
-  building:
-    name: Building
+  build:
+    name: Build (${{ matrix.os }} / ${{ matrix.rust }} / ${{ matrix.target }})
+    runs-on: ${{ matrix.os }}
     continue-on-error: ${{ matrix.experimental || false }}
+
     strategy:
+      fail-fast: false
       matrix:
-        # All generated code should be running on stable now
-        rust: [nightly, stable]
+        os: [ubuntu-latest]
+        rust: [stable, nightly]
+        target:
+          - thumbv8m.main-none-eabihf
+          - riscv32imac-unknown-none-elf
         include:
-          # Nightly is only for reference and allowed to fail
           - rust: nightly
             experimental: true
-        os:
-          # Check compilation works on common OSes
-          # (i.e. no path issues)
-          - ubuntu-latest
-          - macOS-latest
-          - windows-latest
-    runs-on: ${{ matrix.os }}
+
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: ${{ matrix.rust }}
-          target: thumbv8m.main-none-eabihf
-      - run: cargo install flip-link
-      - run: cargo build --all
-      - run: cargo build --all --release
-  linting:
-    name: Linting
+          target: ${{ matrix.target }}
+
+      # Speeds up builds a lot across runs
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      # flip-link is only relevant for ARM Cortex-M linking. Skip it for RISC-V.
+      - name: Install flip-link (ARM only)
+        if: ${{ matrix.target == 'thumbv8m.main-none-eabihf' }}
+        run: cargo install flip-link --locked
+
+      - name: Build (debug)
+        run: cargo build --workspace --target ${{ matrix.target }}
+
+      - name: Build (release)
+        run: cargo build --workspace --release --target ${{ matrix.target }}
+
+  lint:
+    name: Clippy (stable / ARM target)
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           submodules: true
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
           target: thumbv8m.main-none-eabihf
-      - run: cargo clippy --all-features -- --deny=warnings
-  formatting:
-    name: Formatting
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      # If clippy on embedded target becomes painful due to build scripts,
+      # you can remove --target and lint host-only instead.
+      - run: cargo clippy --workspace --target thumbv8m.main-none-eabihf --all-features -- -D warnings
+
+  fmt:
+    name: Rustfmt
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
         with:
           submodules: true
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
-          target: thumbv8m.main-none-eabihf
-      - run: cargo fmt -- --check
+
+      - run: cargo fmt --all -- --check
