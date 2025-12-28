@@ -141,10 +141,12 @@ if __name__ == "__main__":
     ADDR = 0x01
     CMD = 0x02
     DATA = 0x00
-    tx = comm.send(ADDR, CMD, DATA)
-    print("TX:", tx.hex(" ").upper())
-    rx = comm.read_any()
-    print("RX:", rx.hex(" ").upper() if rx else "<no response>")
+    for _ in range(2):
+        tx = comm.send(ADDR, CMD, DATA)
+        print("TX:", tx.hex(" ").upper())
+        rx = comm.read_any()
+        print("RX:", rx.hex(" ").upper() if rx else "<no response>")
+        time.sleep(1)
 
     # Example 2: send a DATA value (1..255) as 2 bytes
     # tx = comm.send(b"0x01", b"0x10", 25)  # payload becomes 00 19
