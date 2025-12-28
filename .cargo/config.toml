@@ -111,3 +111,7 @@ runner = "${PICOTOOL_PATH} load -u -v -x -t elf"
 
 [env]
 DEFMT_LOG = "debug"
+
+[alias]
+buildr = "build --release"
+runr = "run --release"
