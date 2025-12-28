@@ -1,0 +1,7 @@
+[project]
+name = "serial-client"
+version = "0.1.0"
+dependencies = ["pyserial"]
+
+[project.scripts]
+serial-client = "serial_client:main"
