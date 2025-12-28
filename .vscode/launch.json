@@ -1,18 +1,15 @@
-// The format of this file is specified in https://probe.rs/docs/tools/debugger/#start-a-debug-session-with-minimum-configuration
 {
     "version": "0.2.0",
     "configurations": [
         {
-            "preLaunchTask": "rust: cargo build",
-            "type": "probe-rs-debug",
-            "request": "launch",
-            "name": "embedded-systems",
+            "name": "Pico Debug (probe-rs)",
             "cwd": "${workspaceFolder}",
-            "chip": "rp235x",
-            // TODO: Does RP235x support connectUnderReset?
+            "request": "launch",
+            "type": "probe-rs-debug",
             "connectUnderReset": false,
-            "speed": 4000,
+            "speed": 5000,
             "runtimeExecutable": "probe-rs",
+            "chip": "${command:raspberry-pi-pico.getChip}",
             "runtimeArgs": [
                 "dap-server"
             ],
@@ -23,15 +20,21 @@
             "coreConfigs": [
                 {
                     "coreIndex": 0,
-                    "programBinary": "target/thumbv8m.main-none-eabihf/debug/embedded-systems",
-                    "rttEnabled": true
-                    // Uncomment this if you've downloaded the SVD from
-                    // https://github.com/raspberrypi/pico-sdk/raw/2.2.0/src/rp2350/hardware_regs/RP2350.svd
-                    // and placed it in the .vscode directory
-                    // "svdFile": "./.vscode/rp235x.svd",
+                    "programBinary": "${command:raspberry-pi-pico.launchTargetPath}",
+                    "rttEnabled": true,
+                    "svdFile": "${command:raspberry-pi-pico.getSVDPath}",
+                    "rttChannelFormats": [
+                        {
+                            "channelNumber": 0,
+                            "dataFormat": "Defmt",
+                            "mode": "NoBlockSkip",
+                            "showTimestamps": true
+                        }
+                    ]
                 }
             ],
-            "consoleLogLevel": "Info", //Error, Warn, Info, Debug
+            "preLaunchTask": "Build + Generate SBOM (debug)",
+            "consoleLogLevel": "Debug",
             "wireProtocol": "Swd"
         }
     ]
