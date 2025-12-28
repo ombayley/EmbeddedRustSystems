@@ -2,7 +2,7 @@
 edition = "2024"
 name = "embedded-systems"
 version = "0.1.0"
-license = "MIT OR Apache-2.0"
+license = "LICENSE-GPL-3.0"
 
 [build-dependencies]
 regex = "1.11.0"
@@ -45,55 +45,14 @@ embassy-rp = { version = "0.9.0", features = [
 ] }
 embassy-usb = "0.5.1"
 embassy-sync = "0.7.2"
+embassy-futures = "0.1.2"
 static_cell = "2.1.1"
 heapless = "0.8"
 
-cyw43 = { version = "0.5", features = ["defmt", "firmware-logs"] }
-cyw43-pio = { version = "0.8", features = ["defmt"] }
+# cyw43 = { version = "0.5", features = ["defmt", "firmware-logs"] }
+# cyw43-pio = { version = "0.8", features = ["defmt"] }
 
-# pull in the firmware blobs as constants
-cyw43-firmware = { version = "0.1", default-features = false, features = [
-    "wifi",
-] }
-
-# cargo build/run
-[profile.dev]
-debug = 2
-debug-assertions = true
-opt-level = 2
-overflow-checks = true
-
-# cargo build/run --release
-[profile.release]
-debug = 2
-debug-assertions = false
-lto = 'fat'
-opt-level = 2
-overflow-checks = false
-
-# do not optimize proc-macro crates = faster builds from scratch
-[profile.dev.build-override]
-debug = false
-debug-assertions = false
-overflow-checks = false
-opt-level = 0
-
-[profile.release.build-override]
-debug = false
-debug-assertions = false
-overflow-checks = false
-opt-level = 0
-
-# cargo test
-[profile.test]
-debug = 2
-debug-assertions = true
-opt-level = 2
-overflow-checks = true
-
-# cargo test --release
-[profile.bench]
-debug = 2
-debug-assertions = false
-lto = 'fat'
-opt-level = 3
+# # pull in the firmware blobs as constants
+# cyw43-firmware = { version = "0.1", default-features = false, features = [
+#     "wifi",
+# ] }
